@@ -71,11 +71,20 @@ def prepareTrainTestDataSet(args):
     return X_train, Y_train, X_test, Y_test 
 
 def main(args):
-    #import pydevd;pydevd.settrace();
+    import pydevd;pydevd.settrace();
     pprint(args)
     
     X_train, Y_train, X_test, Y_test = prepareTrainTestDataSet(args)
 
+    maxLen = 0
+    X = X_train + X_test
+    
+    for val in X:
+        lenght = len(val)
+        if lenght > maxLen:
+            maxLen = lenght
+    
+    pprint(maxLen)
 
 def parse_arguments(argv):
     
