@@ -1,7 +1,12 @@
 '''
 Created on 5 lut 2018
 
+A toolset to process the files from imdb data set to MySQL DB
+
 @author: mgdak
+
+Andrew L. Maas, Raymond E. Daly, Peter T. Pham, Dan Huang, Andrew Y. Ng, and Christopher Potts. (2011). Learning Word Vectors for Sentiment Analysis. The 49th Annual Meeting of the Association for Computational Linguistics (ACL 2011).
+
 '''
 
 import os
