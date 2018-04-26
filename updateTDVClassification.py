@@ -12,10 +12,17 @@ Andrew L. Maas, Raymond E. Daly, Peter T. Pham, Dan Huang, Andrew Y. Ng, and Chr
 import os
 import argparse
 import sys
+import random
 from pprint import pprint
 import MySQLdb
 
-SQL_COMMAND = u'INSERT INTO reviews (`review`,`source`,`rating`,`source_id`, `pos_neg`) values (%s, %s, %s, %s, %s)'
+SQL_CMD_INSERT = u'INSERT INTO reviews (`review`,`source`,`rating`,`source_id`, `pos_neg`) values (%s, %s, %s, %s, %s)'
+SQL_CMD_ALL_NEG = u'select review_id from reviews where pos_neg = 0'
+SQL_CMD_UPDATE_DTV_CLASS = u'update imdb.review set dtv_classification = %s where review_id = %s'
+
+TRAIN_SPLIT = 0.5
+TEST_SPLIT = 0.25
+VAL_SPLIT = 0.25
 
 def extractDataFromFile(args, file):
     sepId = file.find("_")
@@ -50,23 +57,70 @@ def processFiles(args, files):
     for file in files:
         reviewId, rating, content = extractDataFromFile(args, file)
         pprint(file)
-        dbc.execute(SQL_COMMAND, (content, args.src_dir + file, rating, reviewId, pos_neg))
+        dbc.execute(SQL_CMD_INSERT, (content, args.src_dir + file, rating, reviewId, pos_neg))
     
     return db
+
+
+def importDataFromFilesToDB(args):
+    files = os.listdir(args.src_dir)
+    db = processFiles(args, files)
+    db.commit()
+    db.close()
+
+
+def updateTDVClassification(dbc, dataSet, setType):
+    for revId in dataSet:
+        dbc.execute(SQL_CMD_UPDATE_DTV_CLASS, (revId, setType))
+
+
+def splitData(dataToSplit, dbc, startIdx, endIdx, setType):
+    trainSet = dataToSplit[startIdx:endIdx]
+    updateTDVClassification(dbc, trainSet, setType)
+
+
+def setDataSetSize(dataToSplit):
+    numOfRecords = len(dataToSplit)
+    trainSetSize = numOfRecords * TRAIN_SPLIT
+    testSetSize = numOfRecords * TEST_SPLIT
+    valSetSize = numOfRecords * VAL_SPLIT
+    return trainSetSize, testSetSize, valSetSize
+
+
+def extractIdsFromDBToArray(args, sql):
+    dataToSplit = []
+    dbc, db = dbConnectionInit(args)
+    dbc.execute(SQL_CMD_ALL_NEG)
+    for review_id in dbc:
+        dataToSplit.append(review_id[0])
+    
+    random.shuffle(dataToSplit)
+    return dataToSplit, dbc, db
 
 def main(args):
     pprint(args)
     
-    files = os.listdir(args.src_dir)
-    
-    db = processFiles(args, files)
+    if args.mode == 'Import':
+        importDataFromFilesToDB(args)
+    elif args.mode == 'TDV_Classification':
+        dataToSplit, dbc, db = extractIdsFromDBToArray(args, SQL_CMD_ALL_NEG)
         
-    db.commit()
-    db.close()
+        trainSetSize, testSetSize, valSetSize = setDataSetSize(dataToSplit)
+        
+        splitData(dataToSplit, dbc, 0, trainSetSize -1, 1)
+        splitData(dataToSplit, dbc, trainSetSize, trainSetSize + testSetSize -1, 2)
+        splitData(dataToSplit, dbc, trainSetSize + testSetSize, trainSetSize + testSetSize + valSetSize -1, 3)
+                
+        db.commit()
+        db.close()
 
 def parse_arguments(argv):
     
     parser = argparse.ArgumentParser()
+        
+    parser.add_argument('--mode', type=str, choices=['Import', 'TDV_Classification', 'TDV_Regression'],
+        help='Import - imports data to DB, TDV_Classification - splits data into test, dev & val sets for classification purpose, TDV_Regression - as previous for regression purpose '
+        , default='TDV_Classification')    
         
     parser.add_argument('--src_dir', type=str,
         help='Directory containing txt files to import'
