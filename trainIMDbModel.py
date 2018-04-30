@@ -27,8 +27,9 @@ from keras.models import Sequential, Model
 from keras.layers import Dense, LSTM, MaxPool2D, Conv2D, Flatten, Reshape, Dropout, Input, Concatenate
 from keras import callbacks
 import pickle
+from keras.layers.embeddings import Embedding
 
-SQL_CMD_SELECT_ALL = u'select review, pos_neg from imdb.reviews where dtv_classification = %s LIMIT 100'
+SQL_CMD_SELECT_ALL = u'select review, pos_neg from imdb.reviews where dtv_classification = %s'
 SQL_CMD_SELECT_LIMIT = u'select review, pos_neg from imdb.reviews where dtv_classification = %s LIMIT 100'
 MAX_WORDS_NO = 300 #based on histogram data
 WORD2VEC_NO_OF_FEATURES = 300 #number of features of a Word2Vec model
@@ -115,14 +116,37 @@ def serializeModel(model, fileName):
 '''
 Builds simple LSTM model as in https://github.com/keras-team/keras/blob/master/examples/imdb_lstm.py
 '''
-def crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, savedModelName, noOfEpochs):
-    
+
+def createSimpleLSTMModel():
     model = Sequential()
-    model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2, input_shape=(MAX_WORDS_NO, WORD2VEC_NO_OF_FEATURES,)))
+    model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2, input_shape=(MAX_WORDS_NO, WORD2VEC_NO_OF_FEATURES)))
     model.add(Dense(1, activation='sigmoid'))
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
     earlystop = callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=5, mode='auto')
-    
+    return model, earlystop
+
+
+'''
+Builds simple LSTM model woth Keras Embedding lazer
+'''
+
+def createSimpleLSTMWithEmbeddingModel(w2v_model):
+    model = Sequential()
+    model.add(w2v_model.get_keras_embedding())
+    model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2))
+    model.add(Dense(1, activation='sigmoid'))
+    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+    earlystop = callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=5, mode='auto')
+    return model, earlystop
+
+
+def crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, savedModelName, noOfEpochs, model, w2v_model):
+   
+    if model == 'LSTM': 
+        model, earlystop = createSimpleLSTMModel()
+    else:
+        model, earlystop = createSimpleLSTMWithEmbeddingModel(w2v_model)
+
     # Train model
     print('Train...')
     history = model.fit(X_train_vectorized, 
@@ -150,28 +174,36 @@ def crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_te
 '''
 Builds simple LSTM model as in https://github.com/bhaveshoswal/CNN-text-classification-keras
 '''
-def crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, savedModelName, noOfEpochs):
     
-    inputs = Input(shape=(MAX_WORDS_NO,), dtype='int32')
-    reshape = Reshape((MAX_WORDS_NO, WORD2VEC_NO_OF_FEATURES,1))(inputs)
+
+def createCNNModel(w2v_model):
+    inputs = Input(shape=(MAX_WORDS_NO, ), dtype='int32')
+    embedding = w2v_model.get_keras_embedding()(inputs)
+    reshape = Reshape((MAX_WORDS_NO, WORD2VEC_NO_OF_FEATURES, 1))(embedding)
     
     conv_0 = Conv2D(NUM_FILTERS, kernel_size=(FILTER_SIZES[0], WORD2VEC_NO_OF_FEATURES), padding='valid', kernel_initializer='normal', activation='relu')(reshape)
     conv_1 = Conv2D(NUM_FILTERS, kernel_size=(FILTER_SIZES[1], WORD2VEC_NO_OF_FEATURES), padding='valid', kernel_initializer='normal', activation='relu')(reshape)
     conv_2 = Conv2D(NUM_FILTERS, kernel_size=(FILTER_SIZES[2], WORD2VEC_NO_OF_FEATURES), padding='valid', kernel_initializer='normal', activation='relu')(reshape)
     
-    maxpool_0 = MaxPool2D(pool_size=(MAX_WORDS_NO - FILTER_SIZES[0] + 1, 1), strides=(1,1), padding='valid')(conv_0)
-    maxpool_1 = MaxPool2D(pool_size=(MAX_WORDS_NO - FILTER_SIZES[1] + 1, 1), strides=(1,1), padding='valid')(conv_1)
-    maxpool_2 = MaxPool2D(pool_size=(MAX_WORDS_NO - FILTER_SIZES[2] + 1, 1), strides=(1,1), padding='valid')(conv_2)
+    maxpool_0 = MaxPool2D(pool_size=(MAX_WORDS_NO - FILTER_SIZES[0] + 1, 1), strides=(1, 1), padding='valid')(conv_0)
+    maxpool_1 = MaxPool2D(pool_size=(MAX_WORDS_NO - FILTER_SIZES[1] + 1, 1), strides=(1, 1), padding='valid')(conv_1)
+    maxpool_2 = MaxPool2D(pool_size=(MAX_WORDS_NO - FILTER_SIZES[2] + 1, 1), strides=(1, 1), padding='valid')(conv_2)
     
     concatenated_tensor = Concatenate(axis=1)([maxpool_0, maxpool_1, maxpool_2])
     flatten = Flatten()(concatenated_tensor)
     dropout = Dropout(0.5)(flatten)
-    output = Dense(units=2, activation='softmax')(dropout)
+    output = Dense(units=1, activation='softmax')(dropout)
     
     # this creates a model
     model = Model(inputs=inputs, outputs=output)
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
     earlystop = callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=5, mode='auto')
+    
+    return model, earlystop
+
+def crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, savedModelName, noOfEpochs, w2v_model):
+    
+    model, earlystop = createCNNModel(w2v_model)
     
     # Train model
     print('Train...')
@@ -197,18 +229,28 @@ def crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_tes
     serializeModel(model, savedModelName + "_initialModel")
     
     
-def vectorizeInput(X_train, w2v_model, empty_word, missedWords):
-    X_train_vectorized = np.zeros(shape=(len(X_train), MAX_WORDS_NO, WORD2VEC_NO_OF_FEATURES), dtype=float)
+def vectorizeInput(X_train, w2v_model, empty_word, missedWords, networkModel):
+    if networkModel =='LSTMWithEmbedding':
+        X_train_vectorized = np.zeros(shape=(len(X_train), MAX_WORDS_NO), dtype=int)
+    else:
+        X_train_vectorized = np.zeros(shape=(len(X_train), MAX_WORDS_NO, WORD2VEC_NO_OF_FEATURES), dtype=float)
     
+    #TODO: refactor needed
     for idx, document in enumerate(X_train):
         for jdx, word in enumerate(document):
             if jdx == MAX_WORDS_NO:
                 break
             else:
                 if word in w2v_model:
-                    X_train_vectorized[idx, jdx, :] = w2v_model[word]
+                    if networkModel =='LSTMWithEmbedding':
+                        X_train_vectorized[idx, jdx] = w2v_model[word].index
+                    else:
+                        X_train_vectorized[idx, jdx, :] = w2v_model[word]
                 else:
-                    X_train_vectorized[idx, jdx, :] = empty_word
+                    if networkModel =='LSTMWithEmbedding':
+                        X_train_vectorized[idx, jdx] = 0
+                    else:
+                        X_train_vectorized[idx, jdx, :] = empty_word
                     missedWords.append(word)
                     
     return X_train_vectorized
@@ -217,8 +259,10 @@ def vectorizeInput(X_train, w2v_model, empty_word, missedWords):
 '''
 Based on imported word2vec embeddings vectorizes the input
 '''
-def loadWord2VecAndVectorizeInputs(X_train, X_test, X_val, Y_train, word2vecURI):
+def loadWord2VecAndVectorizeInputs(X_train, X_test, X_val, Y_train, word2vecURI, networkModel):
     w2v_model = Word2VecKeyedVectors.load_word2vec_format(word2vecURI, binary=False)
+    print("vocab_size = %s", len(w2v_model.wv.vocab()))
+    
     WORD2VEC_NO_OF_FEATURES = w2v_model['dog'].shape[0]
 
     print("num_features = %s", WORD2VEC_NO_OF_FEATURES)
@@ -229,15 +273,15 @@ def loadWord2VecAndVectorizeInputs(X_train, X_test, X_val, Y_train, word2vecURI)
     
     missedWords = []
     
-    X_train_vectorized = vectorizeInput(X_train, w2v_model, empty_word, missedWords)
+    X_train_vectorized = vectorizeInput(X_train, w2v_model, empty_word, missedWords, networkModel)
 
-    X_test_vectorized = vectorizeInput(X_test, w2v_model, empty_word, missedWords)
+    X_test_vectorized = vectorizeInput(X_test, w2v_model, empty_word, missedWords, networkModel)
     
-    X_val_vectorized = vectorizeInput(X_val, w2v_model, empty_word, missedWords)
+    X_val_vectorized = vectorizeInput(X_val, w2v_model, empty_word, missedWords, networkModel)
 
     print("Number of words missing = %s", len(set(missedWords)))
     
-    return X_train_vectorized, X_test_vectorized, X_val_vectorized
+    return X_train_vectorized, X_test_vectorized, X_val_vectorized, w2v_model
 
 
 def main(args):
@@ -255,11 +299,15 @@ def main(args):
     elif args.mode == 'readAndRun':
         X_train, Y_train, X_test, Y_test, X_val, Y_val = pickle.loads(open(SERIALIZE_DATA_FILE_NAME, "rb").read())
             
-    X_train_vectorized, X_test_vectorized, X_val_vectorized = loadWord2VecAndVectorizeInputs(X_train, X_test, X_val, Y_train, args.word2vecmodel)
+    X_train_vectorized, X_test_vectorized, X_val_vectorized, w2v_model = loadWord2VecAndVectorizeInputs(X_train, X_test, X_val, Y_train, args.word2vecmodel, args.networkModel)
 
     if args.networkModel == 'LSTM':
-        crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs)
-
+        crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, args.networkModel, w2v_model)
+    elif args.networkModel == 'LSTMWithEmbedding':
+        crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, args.networkModel, w2v_model)
+    elif args.networkModel == 'CNN':
+        crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, w2v_model)
+        
 def parse_arguments(argv):
     
     parser = argparse.ArgumentParser()
@@ -268,8 +316,8 @@ def parse_arguments(argv):
         help='local - uses MySQL to fetch the data and train selected model, dump - serializes train data sets for AWS usage, readAndRun - reads serailized data and trains selected model'
         , default='local')
 
-    parser.add_argument('--networkModel', type=str,  choices=['LSTM', 'CNN'],
-        help='URI pointing to word 2 vec model to be used'
+    parser.add_argument('--networkModel', type=str,  choices=['LSTM', 'CNN', 'LSTMWithEmbedding'],
+        help='LSTM - simple LSTM model using 3d input, CNN - simple CNN, LSTMWithEmbedding - simple LSTM using 2D input with Keras Embedding'
         , default='LSTM')
     
     parser.add_argument('--word2vecmodel', type=str,
