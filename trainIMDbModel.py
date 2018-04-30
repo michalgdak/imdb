@@ -243,7 +243,7 @@ def vectorizeInput(X_train, w2v_model, empty_word, missedWords, networkModel):
             else:
                 if word in w2v_model:
                     if networkModel =='LSTMWithEmbedding':
-                        X_train_vectorized[idx, jdx] = w2v_model[word].index
+                        X_train_vectorized[idx, jdx] = w2v_model.vocab[word].index + 1 
                     else:
                         X_train_vectorized[idx, jdx, :] = w2v_model[word]
                 else:
@@ -261,7 +261,7 @@ Based on imported word2vec embeddings vectorizes the input
 '''
 def loadWord2VecAndVectorizeInputs(X_train, X_test, X_val, Y_train, word2vecURI, networkModel):
     w2v_model = Word2VecKeyedVectors.load_word2vec_format(word2vecURI, binary=False)
-    print("vocab_size = %s", len(w2v_model.wv.vocab()))
+    print("vocab_size = %s", len(w2v_model.vocab))#.wv.vocab()
     
     WORD2VEC_NO_OF_FEATURES = w2v_model['dog'].shape[0]
 
@@ -285,7 +285,7 @@ def loadWord2VecAndVectorizeInputs(X_train, X_test, X_val, Y_train, word2vecURI,
 
 
 def main(args):
-    #import pydevd;pydevd.settrace();
+    import pydevd;pydevd.settrace();
     pprint(args)
     
     if args.mode == 'local':
