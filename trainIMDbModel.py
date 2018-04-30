@@ -285,7 +285,7 @@ def loadWord2VecAndVectorizeInputs(X_train, X_test, X_val, Y_train, word2vecURI,
 
 
 def main(args):
-    import pydevd;pydevd.settrace();
+    #import pydevd;pydevd.settrace();
     pprint(args)
     
     if args.mode == 'local':
