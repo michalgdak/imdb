@@ -130,9 +130,9 @@ def createSimpleLSTMModel():
 Builds simple LSTM model woth Keras Embedding lazer
 '''
 
-def createSimpleLSTMWithEmbeddingModel(w2v_model):
+def createSimpleLSTMWithEmbeddingModel(w2v_model, trainable):
     model = Sequential()
-    model.add(w2v_model.get_keras_embedding())
+    model.add(w2v_model.get_keras_embedding(trainable))
     model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2))
     model.add(Dense(1, activation='sigmoid'))
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
@@ -140,12 +140,12 @@ def createSimpleLSTMWithEmbeddingModel(w2v_model):
     return model, earlystop
 
 
-def crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, savedModelName, noOfEpochs, model, w2v_model):
+def crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, savedModelName, noOfEpochs, model, w2v_model, trainable):
    
     if model == 'LSTM': 
         model, earlystop = createSimpleLSTMModel()
     else:
-        model, earlystop = createSimpleLSTMWithEmbeddingModel(w2v_model)
+        model, earlystop = createSimpleLSTMWithEmbeddingModel(w2v_model, trainable)
 
     # Train model
     print('Train...')
@@ -301,17 +301,32 @@ def main(args):
             
     X_train_vectorized, X_test_vectorized, X_val_vectorized, w2v_model = loadWord2VecAndVectorizeInputs(X_train, X_test, X_val, Y_train, args.word2vecmodel, args.networkModel)
 
-    if args.networkModel == 'LSTM':
-        crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, args.networkModel, w2v_model)
-    elif args.networkModel == 'LSTMWithEmbedding':
-        crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, args.networkModel, w2v_model)
-    elif args.networkModel == 'CNN':
+    if args.networkModel == 'CNN':
         crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, w2v_model)
+    else:
+        crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, args.networkModel, w2v_model, args.trainable)
+
+    
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
         
 def parse_arguments(argv):
     
     parser = argparse.ArgumentParser()
 
+    parser.add_argument('--trainable', 
+        help='Indicates whether Keras Embedding layer should be trained. Only applicable with LSTMWithEmbedding network model',
+        type=str2bool, 
+        nargs='?',
+        const=True, 
+        default=False)
+    
     parser.add_argument('--mode', type=str,  choices=['local', 'dump', 'readAndRun'],
         help='local - uses MySQL to fetch the data and train selected model, dump - serializes train data sets for AWS usage, readAndRun - reads serailized data and trains selected model'
         , default='local')
