@@ -13,11 +13,16 @@ The processData.py script moves data from files to MySQL
 * gensim 3.4.0
 
 ## Getting the data
+TODO
 
 ## Processing the data
+TODO
 
 ## Training the model
+TODO
 
 ## The end result
+TODO
 
 ## Credits
+TODO
