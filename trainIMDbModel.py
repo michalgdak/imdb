@@ -27,7 +27,6 @@ from keras.models import Sequential, Model
 from keras.layers import Dense, LSTM, MaxPool2D, Conv2D, Flatten, Reshape, Dropout, Input, Concatenate
 from keras import callbacks
 import pickle
-from keras.layers.embeddings import Embedding
 
 SQL_CMD_SELECT_ALL = u'select review, pos_neg from imdb.reviews where dtv_classification = %s'
 SQL_CMD_SELECT_LIMIT = u'select review, pos_neg from imdb.reviews where dtv_classification = %s LIMIT 100'
@@ -152,7 +151,7 @@ def crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_te
     history = model.fit(X_train_vectorized, 
                         Y_train, 
                         batch_size=32, 
-                        nb_epoch=noOfEpochs, 
+                        epochs=noOfEpochs, 
                         validation_data=(X_test_vectorized, Y_test),
                         callbacks=[earlystop])
     
@@ -210,7 +209,7 @@ def crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_tes
     history = model.fit(X_train_vectorized, 
                         Y_train, 
                         batch_size=32, 
-                        nb_epoch=noOfEpochs, 
+                        epochs=noOfEpochs, 
                         validation_data=(X_test_vectorized, Y_test),
                         callbacks=[earlystop])
     
@@ -230,10 +229,12 @@ def crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_tes
     
     
 def vectorizeInput(X_train, w2v_model, empty_word, missedWords, networkModel):
-    if networkModel =='LSTMWithEmbedding':
-        X_train_vectorized = np.zeros(shape=(len(X_train), MAX_WORDS_NO), dtype=int)
-    else:
+    if networkModel =='LSTM':
+        #For a usual LSTM network the input has to take into account the word embeddings
         X_train_vectorized = np.zeros(shape=(len(X_train), MAX_WORDS_NO, WORD2VEC_NO_OF_FEATURES), dtype=float)
+    else: 
+        #Keras Embedding layer requires id of a word2vec not the embedding 
+        X_train_vectorized = np.zeros(shape=(len(X_train), MAX_WORDS_NO), dtype=int)
     
     #TODO: refactor needed
     for idx, document in enumerate(X_train):
@@ -260,23 +261,28 @@ def vectorizeInput(X_train, w2v_model, empty_word, missedWords, networkModel):
 Based on imported word2vec embeddings vectorizes the input
 '''
 def loadWord2VecAndVectorizeInputs(X_train, X_test, X_val, Y_train, word2vecURI, networkModel):
-    w2v_model = Word2VecKeyedVectors.load_word2vec_format(word2vecURI, binary=False)
-    print("vocab_size = %s", len(w2v_model.vocab))#.wv.vocab()
     
+    #load Word2Vec model
+    w2v_model = Word2VecKeyedVectors.load_word2vec_format(word2vecURI, binary=False)
+    print("vocab_size = %s", len(w2v_model.vocab))
+    
+    #determine number of features for each word in the model
     WORD2VEC_NO_OF_FEATURES = w2v_model['dog'].shape[0]
 
-    print("num_features = %s", WORD2VEC_NO_OF_FEATURES)
-    print("len(X_train) = %s %s", len(X_train), len(Y_train))
-    print("len(X_test) = %s", len(X_test))
+    print("num_features = ", WORD2VEC_NO_OF_FEATURES)
+    print("len(X_train) = ", len(X_train))
+    print("len(Y_train) = ", len(Y_train))
+    print("len(X_test) = ", len(X_test))
     
+    #define the missing word vector
     empty_word = np.zeros(WORD2VEC_NO_OF_FEATURES, dtype=float)
     
+    #create the list to get the all words which we are missing in the Word2Vec model
     missedWords = []
     
+    #vectorize each input
     X_train_vectorized = vectorizeInput(X_train, w2v_model, empty_word, missedWords, networkModel)
-
     X_test_vectorized = vectorizeInput(X_test, w2v_model, empty_word, missedWords, networkModel)
-    
     X_val_vectorized = vectorizeInput(X_val, w2v_model, empty_word, missedWords, networkModel)
 
     print("Number of words missing = %s", len(set(missedWords)))
@@ -289,21 +295,28 @@ def main(args):
     pprint(args)
     
     if args.mode == 'local':
+        #In local mode data is fetched from MySQL where it's been put using processData
         X_train, Y_train, X_test, Y_test, X_val, Y_val = prepareTrainTestValDataSet(args, args.mode)
-        #plotXHist(X_train, X_test)    
+        #plotXHist(X_train, X_test)     # use this to define MAX_WORDS_NO which will account for most of the data
     elif args.mode == 'dump':
+        #dump mode serializes data from MySQL after lemmitization and tokenization
+        #this trick makes it easy to send the data to AWS
         X_train, Y_train, X_test, Y_test, X_val, Y_val = prepareTrainTestValDataSet(args, args.mode)
         #plotXHist(X_train, X_test)    
         pickle.dump( [X_train, Y_train, X_test, Y_test, X_val, Y_val], open(SERIALIZE_DATA_FILE_NAME, "wb" ))
         return
     elif args.mode == 'readAndRun':
+        #reads the data from serialized file using 'dump' mode
         X_train, Y_train, X_test, Y_test, X_val, Y_val = pickle.loads(open(SERIALIZE_DATA_FILE_NAME, "rb").read())
             
+    #vectorize the sentences using Word2Vec from fastText pointed by args.word2vecmodel
     X_train_vectorized, X_test_vectorized, X_val_vectorized, w2v_model = loadWord2VecAndVectorizeInputs(X_train, X_test, X_val, Y_train, args.word2vecmodel, args.networkModel)
 
     if args.networkModel == 'CNN':
+        #creates and trains model using CNN architecture
         crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, w2v_model)
     else:
+        #creates and trains model using RNN (LSTM) architecture
         crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, args.networkModel, w2v_model, args.trainable)
 
     
