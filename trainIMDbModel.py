@@ -243,15 +243,15 @@ def vectorizeInput(X_train, w2v_model, empty_word, missedWords, networkModel):
                 break
             else:
                 if word in w2v_model:
-                    if networkModel =='LSTMWithEmbedding':
-                        X_train_vectorized[idx, jdx] = w2v_model.vocab[word].index + 1 
-                    else:
+                    if networkModel =='LSTM':
                         X_train_vectorized[idx, jdx, :] = w2v_model[word]
-                else:
-                    if networkModel =='LSTMWithEmbedding':
-                        X_train_vectorized[idx, jdx] = 0
                     else:
+                        X_train_vectorized[idx, jdx] = w2v_model.vocab[word].index + 1 
+                else:
+                    if networkModel =='LSTM':
                         X_train_vectorized[idx, jdx, :] = empty_word
+                    else:
+                        X_train_vectorized[idx, jdx] = 0
                     missedWords.append(word)
                     
     return X_train_vectorized
