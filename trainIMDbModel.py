@@ -307,7 +307,7 @@ def loadWord2VecAndVectorizeInputs(X_train, X_test, X_val, Y_train, word2vecURI,
     X_test_vectorized = vectorizeInput(X_test, w2v_model, empty_word, missedWords, networkModel, word2index)
     X_val_vectorized = vectorizeInput(X_val, w2v_model, empty_word, missedWords, networkModel, word2index)
 
-    print("Number of used words = ", len(set(missedWords)))
+    print("Number of used words = ", len(set(word2index)))
     print("Number of words missing = ", len(set(missedWords)))
     
     return X_train_vectorized, X_test_vectorized, X_val_vectorized, w2v_model, word2index
