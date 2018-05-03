@@ -127,14 +127,14 @@ def createSimpleLSTMModel():
 '''
 This is a workaround for a known bug in gensim get_keras_embedding
 '''
-def createKerasEmbeddingLayer(w2v_model, word2index):
+def createKerasEmbeddingLayer(w2v_model, word2index, trainable):
     vocab_len = len(word2index) + 1
     emb_matrix = np.zeros((vocab_len, WORD2VEC_NO_OF_FEATURES))
     
     for word, index in word2index.items():
         emb_matrix[index, :] = w2v_model[word]
 
-    embedding_layer = Embedding(vocab_len, WORD2VEC_NO_OF_FEATURES, trainable=False)
+    embedding_layer = Embedding(vocab_len, WORD2VEC_NO_OF_FEATURES, trainable=trainable, mask_zero=True)
     embedding_layer.build((None,))
     embedding_layer.set_weights([emb_matrix])
     
@@ -143,9 +143,9 @@ def createKerasEmbeddingLayer(w2v_model, word2index):
 '''
 Builds simple LSTM model woth Keras Embedding lazer
 '''
-def createSimpleLSTMWithEmbeddingModel(w2v_model, word2index):
+def createSimpleLSTMWithEmbeddingModel(w2v_model, word2index, trainable):
     model = Sequential()
-    model.add(createKerasEmbeddingLayer(w2v_model, word2index))
+    model.add(createKerasEmbeddingLayer(w2v_model, word2index, trainable))
     model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2))
     model.add(Dense(1, activation='sigmoid'))
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
@@ -153,12 +153,12 @@ def createSimpleLSTMWithEmbeddingModel(w2v_model, word2index):
     return model, earlystop
 
 
-def crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, savedModelName, noOfEpochs, model, w2v_model, word2index):
+def crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, savedModelName, noOfEpochs, model, w2v_model, word2index, trainable):
    
     if model == 'LSTM': 
         model, earlystop = createSimpleLSTMModel()
     else:
-        model, earlystop = createSimpleLSTMWithEmbeddingModel(w2v_model,word2index)
+        model, earlystop = createSimpleLSTMWithEmbeddingModel(w2v_model, word2index, trainable)
 
     # Train model
     print('Train...')
@@ -189,7 +189,7 @@ Builds simple LSTM model as in https://github.com/bhaveshoswal/CNN-text-classifi
 '''
 def createCNNModel(w2v_model, word2index):
     inputs = Input(shape=(MAX_WORDS_NO, ), dtype='int32')
-    embedding_layer = createKerasEmbeddingLayer(w2v_model, word2index)
+    embedding_layer = createKerasEmbeddingLayer(w2v_model, word2index, False)
     embedding = embedding_layer(inputs)
     reshape = Reshape((MAX_WORDS_NO, WORD2VEC_NO_OF_FEATURES, 1))(embedding)
     
@@ -340,7 +340,7 @@ def main(args):
         crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, w2v_model, word2index)
     else:
         #creates and trains model using RNN (LSTM) architecture
-        crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, args.networkModel, w2v_model, word2index)
+        crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, args.networkModel, w2v_model, word2index. args.trainable)
 
     
 def str2bool(v):
@@ -356,6 +356,13 @@ def parse_arguments(argv):
     
     parser = argparse.ArgumentParser()
     
+    parser.add_argument('--trainable', 
+        help='Whether Keras Embedding layer should be trained',
+        type=str2bool, 
+        nargs='?',
+        const=True, 
+        default=False)
+        
     parser.add_argument('--mode', type=str,  choices=['local', 'dump', 'readAndRun'],
         help='local - uses MySQL to fetch the data and train selected model, dump - serializes train data sets for AWS usage, readAndRun - reads serailized data and trains selected model'
         , default='local')
