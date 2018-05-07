@@ -9,9 +9,10 @@ Credits to:
 1. https://github.com/giuseppebonaccorso/Reuters-21578-Classification/blob/master/Text%20Classification.ipynb
 2. Andrew L. Maas, Raymond E. Daly, Peter T. Pham, Dan Huang, Andrew Y. Ng, and Christopher Potts. (2011). Learning Word Vectors for Sentiment Analysis. The 49th Annual Meeting of the Association for Computational Linguistics (ACL 2011).
 3. https://github.com/keras-team/keras/blob/master/examples/imdb_lstm.py
-4. https://github.com/bhaveshoswal/CNN-text-classification-keras
 
 '''
+
+#TODO: refactor into classes with Factory design model and interfaces
 
 import argparse
 import sys
@@ -23,18 +24,19 @@ from nltk.tokenize import RegexpTokenizer
 from nltk.stem import WordNetLemmatizer
 import matplotlib.pyplot as plt
 from gensim.models.word2vec import Word2VecKeyedVectors
-from keras.models import Sequential, Model
-from keras.layers import Dense, LSTM, MaxPool2D, Conv2D, Flatten, Reshape, Dropout, Input, Concatenate, Embedding
+from keras.models import Sequential
+from keras.layers import Dense, LSTM, Flatten, Dropout, Embedding, Lambda, Conv1D, MaxPooling1D
+from keras.optimizers import Adam, RMSprop
 from keras import callbacks
 import pickle
 
 SQL_CMD_SELECT_ALL = u'select review, pos_neg from imdb.reviews where dtv_classification = %s'
-SQL_CMD_SELECT_LIMIT = u'select review, pos_neg from imdb.reviews where dtv_classification = %s LIMIT 100'
+SQL_CMD_SELECT_LIMIT = u'select review, pos_neg from imdb.reviews where dtv_classification = %s LIMIT 50000'
 MAX_WORDS_NO = 300 #based on histogram data
 WORD2VEC_NO_OF_FEATURES = 300 #number of features of a Word2Vec model
 SERIALIZE_DATA_FILE_NAME = 'imdb_train_test.p'
-FILTER_SIZES = [3,4]
-NUM_FILTERS = 128
+FILTER_SIZES = [3,5]
+NUM_FILTERS = [256, 512]
 
 def dbConnectionInit(args):
     db = MySQLdb.connect(host=args.dbhost, 
@@ -121,8 +123,8 @@ def createSimpleLSTMModel():
     model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2, input_shape=(MAX_WORDS_NO, WORD2VEC_NO_OF_FEATURES, )))
     model.add(Dense(1, activation='sigmoid'))
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-    earlystop = callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=5, mode='auto')
-    return model, earlystop
+    
+    return model
 
 '''
 This is a workaround for a known bug in gensim get_keras_embedding
@@ -134,7 +136,7 @@ def createKerasEmbeddingLayer(w2v_model, word2index, trainable):
     for word, index in word2index.items():
         emb_matrix[index, :] = w2v_model[word]
 
-    embedding_layer = Embedding(vocab_len, WORD2VEC_NO_OF_FEATURES, trainable=trainable, mask_zero=True)
+    embedding_layer = Embedding(vocab_len, WORD2VEC_NO_OF_FEATURES, trainable=trainable, mask_zero=True, input_shape=(MAX_WORDS_NO, ))
     embedding_layer.build((None,))
     embedding_layer.set_weights([emb_matrix])
     
@@ -143,22 +145,24 @@ def createKerasEmbeddingLayer(w2v_model, word2index, trainable):
 '''
 Builds simple LSTM model woth Keras Embedding lazer
 '''
-def createSimpleLSTMWithEmbeddingModel(w2v_model, word2index, trainable):
+def createSimpleLSTMWithEmbeddingModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
     model = Sequential()
     model.add(createKerasEmbeddingLayer(w2v_model, word2index, trainable))
     model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2))
     model.add(Dense(1, activation='sigmoid'))
-    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-    earlystop = callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=5, mode='auto')
-    return model, earlystop
+    
+    rms = RMSprop(decay=lr_decay, lr=learning_rate)
+    model.compile(loss='binary_crossentropy', optimizer=rms, metrics=['accuracy'])
+    
+    return model
 
 
-def crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, savedModelName, noOfEpochs, model, w2v_model, word2index, trainable):
+def crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, savedModelName, noOfEpochs, model, w2v_model, word2index, trainable, learning_rate, lr_decay):
    
     if model == 'LSTM': 
-        model, earlystop = createSimpleLSTMModel()
+        model = createSimpleLSTMModel()
     else:
-        model, earlystop = createSimpleLSTMWithEmbeddingModel(w2v_model, word2index, trainable)
+        model = createSimpleLSTMWithEmbeddingModel(w2v_model, word2index, trainable, learning_rate, lr_decay)
 
     # Train model
     print('Train...')
@@ -167,64 +171,50 @@ def crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_te
                         batch_size=32, 
                         epochs=noOfEpochs, 
                         validation_data=(X_test_vectorized, Y_test),
-                        callbacks=[earlystop])
+                        callbacks=[createEarlyStopping()])
     
     # Evaluate model
-    score, acc = model.evaluate(X_val_vectorized, Y_val, batch_size=32)
-    print('Score: %1.4f' % score)
-    print('Accuracy: %1.4f' % acc)
-    model.summary()
-    
-    plt.plot(history.history['val_acc'], 'r')
-    plt.plot(history.history['acc'], 'b')
-    plt.title('Performance of model LSTM')
-    plt.ylabel('Accuracy')
-    plt.xlabel('Epochs No')
-    plt.savefig(savedModelName + '_initialModel_plot.png')
-    serializeModel(model, savedModelName + "_initialModel")
-
+    evaluateModel(Y_val, X_val_vectorized, savedModelName, model, history)
 
 '''
-Builds simple LSTM model as in https://github.com/bhaveshoswal/CNN-text-classification-keras
+Builds simple CNN model using Conv1D layers
 '''
-def createCNNModel(w2v_model, word2index):
-    inputs = Input(shape=(MAX_WORDS_NO, ), dtype='int32')
-    embedding_layer = createKerasEmbeddingLayer(w2v_model, word2index, False)
-    embedding = embedding_layer(inputs)
-    reshape = Reshape((MAX_WORDS_NO, WORD2VEC_NO_OF_FEATURES, 1))(embedding)
+
+def createEarlyStopping():
+    return callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=3, mode='auto')
+
+
+def createCNNModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
+    model = Sequential()
     
-    conv_0 = Conv2D(NUM_FILTERS, kernel_size=(FILTER_SIZES[0], WORD2VEC_NO_OF_FEATURES), padding='valid', kernel_initializer='normal', activation='relu')(reshape)
-    conv_1 = Conv2D(NUM_FILTERS, kernel_size=(FILTER_SIZES[1], WORD2VEC_NO_OF_FEATURES), padding='valid', kernel_initializer='normal', activation='relu')(reshape)
+    model.add(createKerasEmbeddingLayer(w2v_model, word2index, trainable))
+    #workaround for known bu gin Keras https://github.com/keras-team/keras/issues/4978
+    model.add(Lambda(lambda x: x, output_shape=lambda s:s))
+    model.add(Dropout(0.2))
     
-    maxpool_0 = MaxPool2D(pool_size=(MAX_WORDS_NO - FILTER_SIZES[0] + 1, 1), strides=(1, 1), padding='valid')(conv_0)
-    maxpool_1 = MaxPool2D(pool_size=(MAX_WORDS_NO - FILTER_SIZES[1] + 1, 1), strides=(1, 1), padding='valid')(conv_1)
+    model.add(Conv1D(NUM_FILTERS[0], FILTER_SIZES[0], padding='valid', activation='relu', strides=1))
+    model.add(MaxPooling1D(2,strides=1, padding='valid'))
+
+    model.add(Conv1D(NUM_FILTERS[1], FILTER_SIZES[1], padding='valid', activation='relu', strides=1))
+    model.add(MaxPooling1D(4,strides=1, padding='valid'))
     
-    concatenated_tensor = Concatenate(axis=1)([maxpool_0, maxpool_1])
-    flatten = Flatten()(concatenated_tensor)
-    dropout = Dropout(0.5)(flatten)
-    output = Dense(units=1, activation='softmax')(dropout)
+    model.add(Flatten())
+    model.add(Dropout(0.2))
+    
+    model.add(Dense(units=1, activation='sigmoid'))
     
     # this creates a model
-    model = Model(inputs=inputs, outputs=output)
-    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-    earlystop = callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=5, mode='auto')
+    adam = Adam(lr=learning_rate, decay=lr_decay, momentum=0.9, nesterov=True)
+    model.compile(loss='binary_crossentropy', optimizer=adam, metrics=['accuracy'])
     
-    return model, earlystop
+    return model
 
-def crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, savedModelName, noOfEpochs, w2v_model, word2index):
-    
-    model, earlystop = createCNNModel(w2v_model, word2index)
-    
-    # Train model
-    print('Train...')
-    history = model.fit(X_train_vectorized, 
-                        Y_train, 
-                        batch_size=32, 
-                        epochs=noOfEpochs, 
-                        validation_data=(X_test_vectorized, Y_test),
-                        callbacks=[earlystop])
-    
-    # Evaluate model
+
+'''
+Evaluates given model based on validation data set passed
+Plots the accuracy graph
+'''
+def evaluateModel(Y_val, X_val_vectorized, savedModelName, model, history):
     score, acc = model.evaluate(X_val_vectorized, Y_val, batch_size=32)
     print('Score: %1.4f' % score)
     print('Accuracy: %1.4f' % acc)
@@ -237,6 +227,23 @@ def crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_tes
     plt.xlabel('Epochs No')
     plt.savefig(savedModelName + '_initialModel_plot.png')
     serializeModel(model, savedModelName + "_initialModel")
+
+
+def crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, savedModelName, noOfEpochs, w2v_model, word2index, trainable, learning_rate, lr_decay):
+    
+    model = createCNNModel(w2v_model, word2index, trainable, learning_rate, lr_decay)
+    
+    # Train model
+    print('Train...')
+    history = model.fit(X_train_vectorized, 
+                        Y_train, 
+                        batch_size=32, 
+                        epochs=noOfEpochs, 
+                        validation_data=(X_test_vectorized, Y_test),
+                        callbacks=[createEarlyStopping()])
+    
+    # Evaluate model
+    evaluateModel(Y_val, X_val_vectorized, savedModelName, model, history)
 
     
 #TODO: refactor needed    
@@ -337,10 +344,10 @@ def main(args):
 
     if args.networkModel == 'CNN':
         #creates and trains model using CNN architecture
-        crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, w2v_model, word2index)
+        crateTrainEvaluateCNNModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, w2v_model, word2index, args.trainable, args.learning_rate, args.lr_decay)
     else:
         #creates and trains model using RNN (LSTM) architecture
-        crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, args.networkModel, w2v_model, word2index, args.trainable)
+        crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_test_vectorized, X_val_vectorized, args.savedModelName, args.no_of_epochs, args.networkModel, w2v_model, word2index, args.trainable, args.learning_rate, args.lr_decay)
 
     
 def str2bool(v):
@@ -380,7 +387,13 @@ def parse_arguments(argv):
         , default='LSTM')
     
     parser.add_argument('--no_of_epochs', type=int,
-        help='Number of epochs to run.', default=15)
+        help='Number of epochs to run.', default=150)
+    
+    parser.add_argument('--learning_rate', type=float,
+        help='Initial learning rate.', default=0.0003)
+    
+    parser.add_argument('--lr_decay', type=float,
+        help='Learning rate decay', default=1e-3)
                 
     parser.add_argument('--dbhost', type=str,
         help='MySQL DB host'
