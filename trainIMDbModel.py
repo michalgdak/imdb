@@ -35,8 +35,8 @@ SQL_CMD_SELECT_LIMIT = u'select review, pos_neg from imdb.reviews where dtv_clas
 MAX_WORDS_NO = 300 #based on histogram data
 WORD2VEC_NO_OF_FEATURES = 300 #number of features of a Word2Vec model
 SERIALIZE_DATA_FILE_NAME = 'imdb_train_test.p'
-FILTER_SIZES = [3,5]
-NUM_FILTERS = [256, 512]
+FILTER_SIZES = [3, 5, 7]
+NUM_FILTERS = [256, 512, 1024]
 
 def dbConnectionInit(args):
     db = MySQLdb.connect(host=args.dbhost, 
@@ -148,7 +148,9 @@ Builds simple LSTM model woth Keras Embedding lazer
 def createSimpleLSTMWithEmbeddingModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
     model = Sequential()
     model.add(createKerasEmbeddingLayer(w2v_model, word2index, trainable))
-    model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2))
+    model.add(LSTM(256, dropout=0.2, recurrent_dropout=0.2, return_sequences=True))
+    model.add(LSTM(256, dropout=0.3, recurrent_dropout=0.3, return_sequences=True))
+    model.add(LSTM(256, dropout=0.5, recurrent_dropout=0.5, return_sequences=False))
     model.add(Dense(1, activation='sigmoid'))
     
     rms = RMSprop(decay=lr_decay, lr=learning_rate)
@@ -190,22 +192,25 @@ def createCNNModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
     model.add(createKerasEmbeddingLayer(w2v_model, word2index, trainable))
     #workaround for known bu gin Keras https://github.com/keras-team/keras/issues/4978
     model.add(Lambda(lambda x: x, output_shape=lambda s:s))
-    model.add(Dropout(0.2))
+    model.add(Dropout(0.3))
     
     model.add(Conv1D(NUM_FILTERS[0], FILTER_SIZES[0], padding='valid', activation='relu', strides=1))
     model.add(MaxPooling1D(2,strides=1, padding='valid'))
 
-    model.add(Conv1D(NUM_FILTERS[1], FILTER_SIZES[1], padding='valid', activation='relu', strides=1))
+    model.add(Conv1D(NUM_FILTERS[1], FILTER_SIZES[1], padding='valid', activation='relu', strides=2))
     model.add(MaxPooling1D(4,strides=1, padding='valid'))
     
+    model.add(Conv1D(NUM_FILTERS[2], FILTER_SIZES[2], padding='valid', activation='relu', strides=4))
+    model.add(MaxPooling1D(6,strides=1, padding='valid'))
+
     model.add(Flatten())
-    model.add(Dropout(0.2))
+    model.add(Dropout(0.3))
     
     model.add(Dense(units=1, activation='sigmoid'))
     
     # this creates a model
-    adam = Adam(lr=learning_rate, decay=lr_decay, momentum=0.9, nesterov=True)
-    model.compile(loss='binary_crossentropy', optimizer=adam, metrics=['accuracy'])
+    rms = RMSprop(lr=learning_rate, decay=lr_decay)
+    model.compile(loss='binary_crossentropy', optimizer=rms, metrics=['accuracy'])
     
     return model
 
