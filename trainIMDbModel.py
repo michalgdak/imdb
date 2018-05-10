@@ -27,7 +27,7 @@ from gensim.models.word2vec import Word2VecKeyedVectors
 from keras.models import Sequential
 from keras.layers import Dense, LSTM, Flatten, Dropout, Embedding, Lambda, Conv1D, MaxPooling1D
 from keras.optimizers import Adam, RMSprop
-from keras import callbacks
+from keras import callbacks, regularizers
 import pickle
 
 SQL_CMD_SELECT_ALL = u'select review, pos_neg from imdb.reviews where dtv_classification = %s'
@@ -136,7 +136,14 @@ def createKerasEmbeddingLayer(w2v_model, word2index, trainable):
     for word, index in word2index.items():
         emb_matrix[index, :] = w2v_model[word]
 
-    embedding_layer = Embedding(vocab_len, WORD2VEC_NO_OF_FEATURES, trainable=trainable, mask_zero=True, input_shape=(MAX_WORDS_NO, ))
+    embedding_layer = Embedding(vocab_len, 
+                                WORD2VEC_NO_OF_FEATURES, 
+                                trainable=trainable, 
+                                mask_zero=True, 
+                                input_shape=(MAX_WORDS_NO, ),
+                                embeddings_initializer = 'random_uniform',
+                                embeddings_regularizer = regularizers.l2(0.01))
+    
     embedding_layer.build((None,))
     embedding_layer.set_weights([emb_matrix])
     
@@ -148,10 +155,23 @@ Builds simple LSTM model woth Keras Embedding lazer
 def createSimpleLSTMWithEmbeddingModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
     model = Sequential()
     model.add(createKerasEmbeddingLayer(w2v_model, word2index, trainable))
-    model.add(LSTM(256, dropout=0.2, recurrent_dropout=0.2, return_sequences=True))
-    model.add(LSTM(256, dropout=0.3, recurrent_dropout=0.3, return_sequences=True))
-    model.add(LSTM(256, dropout=0.5, recurrent_dropout=0.5, return_sequences=False))
-    model.add(Dense(1, activation='sigmoid'))
+    model.add(LSTM(128, 
+                   dropout=0.3, 
+                   recurrent_dropout=0.3, 
+                   return_sequences=False,
+                   kernel_initializer = 'random_uniform', 
+                   recurrent_initializer = 'random_uniform',
+                   bias_initializer = 'random_uniform',
+                   kernel_regularizer = regularizers.l2(0.01),
+                   recurrent_regularizer = regularizers.l2(0.01),
+                   bias_regularizer = regularizers.l2(0.01),
+                   activity_regularizer = regularizers.l2(0.01)))
+    model.add(Dense(1, 
+                    activation='sigmoid',
+                    kernel_initializer = 'random_uniform',
+                    bias_initializer = 'random_uniform',
+                    kernel_regularizer = regularizers.l2(0.01),
+                    bias_regularizer = regularizers.l2(0.01)))
     
     rms = RMSprop(decay=lr_decay, lr=learning_rate)
     model.compile(loss='binary_crossentropy', optimizer=rms, metrics=['accuracy'])
@@ -194,15 +214,26 @@ def createCNNModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
     model.add(Lambda(lambda x: x, output_shape=lambda s:s))
     model.add(Dropout(0.3))
     
-    model.add(Conv1D(NUM_FILTERS[0], FILTER_SIZES[0], padding='valid', activation='relu', strides=1))
+    model.add(Conv1D(NUM_FILTERS[0], 
+                     FILTER_SIZES[0], 
+                     padding='valid', 
+                     activation='relu', 
+                     strides=1,
+                     kernel_regularizer = regularizers.l2(0.01),
+                     bias_regularizer = regularizers.l2(0.01),
+                     activity_regularizer = regularizers.l2(0.01)))
     model.add(MaxPooling1D(2,strides=1, padding='valid'))
 
-    model.add(Conv1D(NUM_FILTERS[1], FILTER_SIZES[1], padding='valid', activation='relu', strides=2))
+    model.add(Conv1D(NUM_FILTERS[1], 
+                     FILTER_SIZES[1], 
+                     padding='valid', 
+                     activation='relu', 
+                     strides=1,
+                     kernel_regularizer = regularizers.l2(0.01),
+                     bias_regularizer = regularizers.l2(0.01),
+                     activity_regularizer = regularizers.l2(0.01)))
     model.add(MaxPooling1D(4,strides=1, padding='valid'))
     
-    model.add(Conv1D(NUM_FILTERS[2], FILTER_SIZES[2], padding='valid', activation='relu', strides=4))
-    model.add(MaxPooling1D(6,strides=1, padding='valid'))
-
     model.add(Flatten())
     model.add(Dropout(0.3))
     
