@@ -156,7 +156,10 @@ def createSimpleLSTMWithEmbeddingModel(w2v_model, word2index, trainable, learnin
     model.add(LSTM(128, 
                    dropout=0.3, 
                    recurrent_dropout=0.3, 
-                   return_sequences=False))
+                   return_sequences=False, 
+                   kernel_regularizer = regularizers.l2(0.01),
+                   bias_regularizer = regularizers.l2(0.01),
+                   activity_regularizer = regularizers.l2(0.01)))
     model.add(Dense(1, 
                     activation='sigmoid'))
     
