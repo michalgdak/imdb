@@ -140,8 +140,7 @@ def createKerasEmbeddingLayer(w2v_model, word2index, trainable):
                                 WORD2VEC_NO_OF_FEATURES, 
                                 trainable=trainable, 
                                 mask_zero=True, 
-                                input_shape=(MAX_WORDS_NO, ),
-                                embeddings_regularizer = regularizers.l2(0.01))
+                                input_shape=(MAX_WORDS_NO, ))
     
     embedding_layer.build((None,))
     embedding_layer.set_weights([emb_matrix])
@@ -157,15 +156,9 @@ def createSimpleLSTMWithEmbeddingModel(w2v_model, word2index, trainable, learnin
     model.add(LSTM(128, 
                    dropout=0.3, 
                    recurrent_dropout=0.3, 
-                   return_sequences=False,
-                   kernel_regularizer = regularizers.l2(0.01),
-                   recurrent_regularizer = regularizers.l2(0.01),
-                   bias_regularizer = regularizers.l2(0.01),
-                   activity_regularizer = regularizers.l2(0.01)))
+                   return_sequences=False))
     model.add(Dense(1, 
-                    activation='sigmoid',
-                    kernel_regularizer = regularizers.l2(0.01),
-                    bias_regularizer = regularizers.l2(0.01)))
+                    activation='sigmoid'))
     
     rms = Adam(decay=lr_decay, lr=learning_rate)
     model.compile(loss='binary_crossentropy', optimizer=rms, metrics=['accuracy'])
