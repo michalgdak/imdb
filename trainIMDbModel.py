@@ -224,7 +224,7 @@ def createCNNModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
                      bias_regularizer = regularizers.l2(1e-6),
                      activity_regularizer = regularizers.l2(1e-6)))
     model.add(MaxPooling1D(4,strides=1, padding='valid'))
-    
+    model.add(Dropout(0.4))
     model.add(Flatten())
     model.add(Dropout(0.4))
     
