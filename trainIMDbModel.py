@@ -203,7 +203,7 @@ def createCNNModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
     model.add(createKerasEmbeddingLayer(w2v_model, word2index, trainable))
     #workaround for known bug in Keras https://github.com/keras-team/keras/issues/4978
     model.add(Lambda(lambda x: x, output_shape=lambda s:s))
-    model.add(Dropout(0.1))
+    model.add(Dropout(0.4))
     
     model.add(Conv1D(NUM_FILTERS[0], 
                      FILTER_SIZES[0], 
@@ -226,7 +226,7 @@ def createCNNModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
     model.add(MaxPooling1D(4,strides=1, padding='valid'))
     
     model.add(Flatten())
-    model.add(Dropout(0.1))
+    model.add(Dropout(0.4))
     
     model.add(Dense(units=1, activation='sigmoid'))
     
