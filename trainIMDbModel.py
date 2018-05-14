@@ -140,7 +140,8 @@ def createKerasEmbeddingLayer(w2v_model, word2index, trainable):
                                 WORD2VEC_NO_OF_FEATURES, 
                                 trainable=trainable, 
                                 mask_zero=True, 
-                                input_shape=(MAX_WORDS_NO, ))
+                                input_shape=(MAX_WORDS_NO, ),
+                                embeddings_regularizer = regularizers.l2(1e-6))
     
     embedding_layer.build((None,))
     embedding_layer.set_weights([emb_matrix])
@@ -153,13 +154,13 @@ Builds simple LSTM model woth Keras Embedding lazer
 def createSimpleLSTMWithEmbeddingModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
     model = Sequential()
     model.add(createKerasEmbeddingLayer(w2v_model, word2index, trainable))
-    model.add(LSTM(128, 
+    model.add(LSTM(256, 
                    dropout=0.3, 
                    recurrent_dropout=0.3, 
                    return_sequences=False, 
-                   kernel_regularizer = regularizers.l2(0.01),
-                   bias_regularizer = regularizers.l2(0.01),
-                   activity_regularizer = regularizers.l2(0.01)))
+                   kernel_regularizer = regularizers.l2(1e-6),
+                   bias_regularizer = regularizers.l2(1e-6),
+                   activity_regularizer = regularizers.l2(1e-6)))
     model.add(Dense(1, 
                     activation='sigmoid'))
     
@@ -193,7 +194,7 @@ Builds simple CNN model using Conv1D layers
 '''
 
 def createEarlyStopping():
-    return callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=3, mode='auto')
+    return callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=5, mode='auto')
 
 
 def createCNNModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
@@ -209,9 +210,9 @@ def createCNNModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
                      padding='valid', 
                      activation='relu', 
                      strides=1,
-                     kernel_regularizer = regularizers.l2(0.01),
-                     bias_regularizer = regularizers.l2(0.01),
-                     activity_regularizer = regularizers.l2(0.01)))
+                     kernel_regularizer = regularizers.l2(1e-6),
+                     bias_regularizer = regularizers.l2(1e-6),
+                     activity_regularizer = regularizers.l2(1e-6)))
     model.add(MaxPooling1D(2,strides=1, padding='valid'))
 
     model.add(Conv1D(NUM_FILTERS[1], 
@@ -219,9 +220,9 @@ def createCNNModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
                      padding='valid', 
                      activation='relu', 
                      strides=1,
-                     kernel_regularizer = regularizers.l2(0.01),
-                     bias_regularizer = regularizers.l2(0.01),
-                     activity_regularizer = regularizers.l2(0.01)))
+                     kernel_regularizer = regularizers.l2(1e-6),
+                     bias_regularizer = regularizers.l2(1e-6),
+                     activity_regularizer = regularizers.l2(1e-6)))
     model.add(MaxPooling1D(4,strides=1, padding='valid'))
     
     model.add(Flatten())
