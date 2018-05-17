@@ -141,7 +141,7 @@ def createKerasEmbeddingLayer(w2v_model, word2index, trainable):
                                 trainable=trainable, 
                                 mask_zero=True, 
                                 input_shape=(MAX_WORDS_NO, ),
-                                embeddings_regularizer = regularizers.l2(1e-6))
+                                embeddings_regularizer = regularizers.l2(1e-7))
     
     embedding_layer.build((None,))
     embedding_layer.set_weights([emb_matrix])
@@ -154,13 +154,13 @@ Builds simple LSTM model woth Keras Embedding lazer
 def createSimpleLSTMWithEmbeddingModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
     model = Sequential()
     model.add(createKerasEmbeddingLayer(w2v_model, word2index, trainable))
-    model.add(LSTM(256, 
+    model.add(LSTM(128, 
                    dropout=0.3, 
                    recurrent_dropout=0.3, 
                    return_sequences=False, 
-                   kernel_regularizer = regularizers.l2(1e-6),
-                   bias_regularizer = regularizers.l2(1e-6),
-                   activity_regularizer = regularizers.l2(1e-6)))
+                   kernel_regularizer = regularizers.l2(1e-7),
+                   bias_regularizer = regularizers.l2(1e-7),
+                   activity_regularizer = regularizers.l2(1e-7)))
     model.add(Dense(1, 
                     activation='sigmoid'))
     
@@ -185,7 +185,14 @@ def crateTrainEvaluateLSTMModel(Y_train, Y_test, Y_val, X_train_vectorized, X_te
                         epochs=noOfEpochs, 
                         validation_data=(X_test_vectorized, Y_test),
                         callbacks=[createEarlyStopping()])
-    
+
+
+    predictions = model.predict(X_test_vectorized)
+    pprint(predictions[0:10])
+    incorrects = np.nonzero(predictions.reshape((-1,)) != Y_test)
+
+    pprint(incorrects[0:10])
+
     # Evaluate model
     evaluateModel(Y_val, X_val_vectorized, savedModelName, model, history)
 
@@ -194,7 +201,7 @@ Builds simple CNN model using Conv1D layers
 '''
 
 def createEarlyStopping():
-    return callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=5, mode='auto')
+    return callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=0, mode='auto')
 
 
 def createCNNModel(w2v_model, word2index, trainable, learning_rate, lr_decay):
@@ -245,8 +252,8 @@ def evaluateModel(Y_val, X_val_vectorized, savedModelName, model, history):
     score, acc = model.evaluate(X_val_vectorized, Y_val, batch_size=32)
     print('Score: %1.4f' % score)
     print('Accuracy: %1.4f' % acc)
-    model.summary()
-    
+    model.summary()    
+
     plt.plot(history.history['val_acc'], 'r')
     plt.plot(history.history['acc'], 'b')
     plt.title('Performance of model LSTM')
